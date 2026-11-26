@@ -88,12 +88,15 @@ class AmcDataUpdateCoordinator(DataUpdateCoordinator):
                     name=device_title or central_id
                 )
             states = AmcStatesParser(self.data)
+            # The AMC cloud may omit realName: don't fail on missing parts
+            real_name = states.real_name(central_id)
+            model = " ".join(p for p in (real_name, states.model(central_id)) if p)
             # Creo DeviceInfo solo la prima volta
             self._device_info = DeviceInfo(
                 identifiers={(DOMAIN, central_id)},
                 manufacturer="AMC Elettronica",
-                model=states.real_name(central_id) + " " + states.model(central_id),
-                name=device_title or states.real_name(central_id),
+                model=model or None,
+                name=device_title or real_name or central_id,
                 sw_version=states.version(central_id),
                 serial_number=central_id
             )
