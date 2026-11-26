@@ -121,7 +121,8 @@ class AmcCentralResponse(BaseModel):
 
 class AmcUser(BaseModel):
     email: str
-    password: str
+    # AMC cloud no longer returns the password in the loginUser response
+    password: Optional[str] = None
     regUrl: Optional[str] = None
     surname: Optional[str] = None
     name: Optional[str] = None
