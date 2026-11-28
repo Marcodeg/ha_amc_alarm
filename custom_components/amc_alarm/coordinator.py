@@ -155,6 +155,11 @@ class AmcDataUpdateCoordinator(DataUpdateCoordinator):
             raise ConfigEntryAuthFailed(ex) from ex
         except AmcCentralNotFoundException as ex:
             raise ConfigEntryAuthFailed(ex) from ex
+        except AmcCentralStatusErrorException as ex:
+            if not api._raw_states_central_valid:
+                raise ConfigEntryNotReady(ex) from ex
+            # already set up: let the coordinator retry on the next interval
+            raise UpdateFailed(ex) from ex
         except AmcException as ex:
             raise ConfigEntryNotReady(ex) from ex
         except Exception as error:

@@ -17,6 +17,10 @@ _LOGGER = logging.getLogger(__name__)
 # https://github.com/Kane610/deconz/blob/master/pydeconz/websocket.py
 
 
+# Spurious "wrong login" answers tolerated before treating the central credentials as wrong
+CENTRAL_WRONG_LOGIN_MAX_RETRIES = 5
+
+
 class ConnectionState(Enum):
     STARTING = 0
     CONNECTED = 1
@@ -103,6 +107,9 @@ class SimplifiedAmcApi:
         self._sessionToken = None
         self._ws_state_disconnecting : bool = False
         self._ws_state_stop_exeception : Exception = None
+        # consecutive "wrong login" answers for the central (the AMC cloud
+        # can send a spurious one right after an outage)
+        self._central_wrong_login_count = 0
         
         self._callback = async_state_updated_callback
         self._callback_get_states_disabled : bool = False
@@ -537,6 +544,7 @@ class SimplifiedAmcApi:
                     self._raw_states_central_valid = True
                     self._raw_states_centralstatus_valid = True
                     self._failed_attempts = 0
+                    self._central_wrong_login_count = 0
                     await self._set_calculated_states()
                     status.set_ok(data.centrals)
                     await self._change_state(ConnectionState.CENTRAL_OK)
@@ -558,7 +566,13 @@ class SimplifiedAmcApi:
                         self._raw_states[self._central_id].statusID = statusID_new
                         self._raw_states[self._central_id].status = status_new
                     # {"command":"getStates","status":"ok","layout":null,"centrals":{"XXX":{"amcProtoVer":2,"realName":"X864V","statusID":0,"status":"wrong login X864V/4.10"}}}
-                    if status_new and status_new.startswith("wrong login"):                        
+                    if status_new and status_new.startswith("wrong login") and self._central_wrong_login_count < CENTRAL_WRONG_LOGIN_MAX_RETRIES:
+                        # Treat it as transient: keep the connection and retry on the next poll
+                        self._central_wrong_login_count += 1
+                        _LOGGER.warning("Central answered '%s' (%d/%d), retrying", status_new, self._central_wrong_login_count, CENTRAL_WRONG_LOGIN_MAX_RETRIES)
+                        await self._change_state(ConnectionState.CENTRAL_KO, f"Central {status_new}")
+                        status.set_ko(AmcCentralStatusErrorException("Central " + status_new))
+                    elif status_new and status_new.startswith("wrong login"):
                         _LOGGER.warning("Central Authorization failure: %s, data=%s" % (data.status, message.data))
                         self._ws_state_stop_exeception = AuthenticationFailed(f"Central Authorization failure: {status_new}")
                         await self._change_state(ConnectionState.STOPPED, f"Central Authorization failure: {status_new}")
